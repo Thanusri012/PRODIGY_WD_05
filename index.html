@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Live Weather Dashboard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;500;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body {
+      font-family: 'Poppins', sans-serif;
+      background: linear-gradient(to right, #080808, #1b081d);
+    }
+    .card {
+      background-color: #c3dcf0;
+      border-radius: 1.5rem;
+      box-shadow: 0 4px 20px rgba(224, 232, 0, 0.532);
+      padding: 1.5rem;
+      transition: transform 0.3s ease, box-shadow 0.3s ease;
+    }
+    .card:hover {
+      transform: translateY(-4px);
+      box-shadow: 0 8px 30px rgba(0, 0, 0, 0.1);
+    }
+    .weather-icon {
+      width: 50px;
+      height: 50px;
+    }
+  </style>
+</head>
+<body class="p-4">
+  <div class="max-w-7xl mx-auto space-y-8">
+    <!-- Search Bar -->
+    <div class="flex justify-between items-center">
+      <input type="text" id="cityInput" placeholder="Enter city name" class="p-3 rounded-lg w-full max-w-md shadow-md border border-gray-300" />
+      <button onclick="getWeatherByCity()" class="ml-4 bg-blue-600 text-white px-4 py-2 rounded-lg shadow hover:bg-blue-700">Search</button>
+    </div>
+
+    <!-- Current Weather Card -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div class="card col-span-1 text-center bg-blue-500 text-white">
+        <h2 id="location" class="text-xl font-semibold">Location</h2>
+        <p id="date" class="text-sm mb-2">Date</p>
+        <img id="weather-icon" class="mx-auto weather-icon" src="" alt="icon">
+        <h1 id="temperature" class="text-6xl font-bold my-2">--&deg;</h1>
+        <p id="weather-description" class="text-lg">Description</p>
+      </div>
+
+      <!-- Weather Details -->
+      <div class="card col-span-2 grid grid-cols-2 md:grid-cols-3 gap-4 text-center">
+        <div><p class="text-sm">Humidity</p><p class="text-xl font-bold" id="humidity">--%</p></div>
+        <div><p class="text-sm">Wind</p><p class="text-xl font-bold" id="wind">-- km/h</p></div>
+        <div><p class="text-sm">Pressure</p><p class="text-xl font-bold" id="pressure">-- hPa</p></div>
+        <div><p class="text-sm">Feels Like</p><p class="text-xl font-bold" id="feels_like">--&deg;</p></div>
+        <div><p class="text-sm">UV Index</p><p class="text-xl font-bold" id="uv">--</p></div>
+        <div><p class="text-sm">Visibility</p><p class="text-xl font-bold" id="visibility">-- m</p></div>
+      </div>
+    </div>
+
+    <!-- Hourly Forecast Section -->
+    <div class="card">
+      <h3 class="text-lg font-semibold mb-4">Upcoming Hours Forecast</h3>
+      <canvas id="hourlyChart" height="100"></canvas>
+    </div>
+
+    <!-- 5-Day Forecast Section -->
+    <div class="card">
+      <h3 class="text-lg font-semibold mb-4">5-Day Forecast</h3>
+      <div id="dailyForecast" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-4 text-center"></div>
+    </div>
+  </div>
+
+  <script>
+    const apiKey = '764deb87fa9b1517db738d2c15b3dd47';
+
+    async function fetchWeather(lat, lon) {
+      const [current, forecast, uv] = await Promise.all([
+        fetch(`https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&appid=${apiKey}&units=metric`).then(res => res.json()),
+        fetch(`https://api.openweathermap.org/data/2.5/forecast?lat=${lat}&lon=${lon}&appid=${apiKey}&units=metric`).then(res => res.json()),
+        fetch(`https://api.openweathermap.org/data/2.5/uvi?appid=${apiKey}&lat=${lat}&lon=${lon}`).then(res => res.json())
+      ]);
+
+      updateMainWeather(current);
+      document.getElementById('uv').textContent = uv.value;
+      updateHourlyChart(forecast);
+      updateDailyForecast(forecast);
+    }
+
+   function updateMainWeather(data) {
+  document.getElementById('location').innerHTML = `<i class="fas fa-map-marker-alt"></i> ${data.name}, ${data.sys.country}`;
+  document.getElementById('date').innerHTML = `<i class="fas fa-calendar-alt"></i> ${new Date().toLocaleString()}`;
+  document.getElementById('temperature').innerHTML = `<i class="fas fa-thermometer-half"></i> ${Math.round(data.main.temp)}°`;
+  document.getElementById('weather-description').innerHTML = `<i class="fas fa-cloud-sun"></i> ${data.weather[0].description}`;
+  document.getElementById('humidity').innerHTML = `<i class="fas fa-tint"></i> ${data.main.humidity}%`;
+  document.getElementById('wind').innerHTML = `<i class="fas fa-wind"></i> ${data.wind.speed} km/h`;
+  document.getElementById('pressure').innerHTML = `<i class="fas fa-tachometer-alt"></i> ${data.main.pressure} hPa`;
+  document.getElementById('feels_like').innerHTML = `<i class="fas fa-temperature-low"></i> ${Math.round(data.main.feels_like)}°`;
+  document.getElementById('visibility').innerHTML = `<i class="fas fa-eye"></i> ${data.visibility} m`;
+  document.getElementById('weather-icon').src = `https://openweathermap.org/img/wn/${data.weather[0].icon}@2x.png`;
+
+    }
+
+    function updateHourlyChart(forecastData) {
+      const nextHours = forecastData.list.slice(0, 8);
+      const labels = nextHours.map(entry => new Date(entry.dt * 1000).getHours() + ':00');
+      const temps = nextHours.map(entry => entry.main.temp);
+      const rainChances = nextHours.map(entry => entry.pop * 100);
+
+      const ctx = document.getElementById('hourlyChart').getContext('2d');
+      new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels,
+          datasets: [
+            {
+              label: 'Temp (°C)',
+              data: temps,
+              backgroundColor: 'rgba(59, 130, 246, 0.5)',
+              borderRadius: 10
+            },
+            {
+              label: 'Chance of Rain (%)',
+              data: rainChances,
+              backgroundColor: 'rgba(774, 197, 94, 0.4)',
+              borderRadius: 10
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          plugins: {
+            legend: {
+              display: true
+            }
+          },
+          scales: {
+            y: {
+              beginAtZero: true,
+              max: 100
+            }
+          }
+        }
+      });
+    }
+
+    function updateDailyForecast(forecastData) {
+      const dayMap = {};
+      forecastData.list.forEach(entry => {
+        const date = new Date(entry.dt * 1000).toDateString();
+        if (!dayMap[date]) dayMap[date] = [];
+        dayMap[date].push(entry);
+      });
+
+      const container = document.getElementById('dailyForecast');
+      container.innerHTML = '';
+
+      Object.keys(dayMap).slice(0, 5).forEach(date => {
+        const entries = dayMap[date];
+        const temps = entries.map(e => e.main.temp);
+        const icons = entries.map(e => e.weather[0].icon);
+        const min = Math.min(...temps);
+        const max = Math.max(...temps);
+        const rainChance = (entries.map(e => e.pop).reduce((a,b) => a + b) / entries.length * 100).toFixed(0);
+        const icon = icons[Math.floor(icons.length / 2)];
+
+        const card = document.createElement('div');
+        card.className = 'bg-blue-50 rounded-xl p-4 shadow transition hover:scale-105';
+        card.innerHTML = `
+          <p class="font-semibold text-sm">${date.split(' ')[0]}</p>
+          <img src="https://openweathermap.org/img/wn/${icon}@2x.png" class="mx-auto"/>
+          <p class="text-md">H: ${Math.round(max)}° / L: ${Math.round(min)}°</p>
+          <p class="text-sm text-gray-500">🌧️ ${rainChance}% rain</p>
+        `;
+        container.appendChild(card);
+      });
+    }
+
+    function getWeatherByCity() {
+      const city = document.getElementById('cityInput').value;
+      fetch(`https://api.openweathermap.org/data/2.5/weather?q=${city}&appid=${apiKey}&units=metric`)
+        .then(res => res.json())
+        .then(data => fetchWeather(data.coord.lat, data.coord.lon));
+    }
+
+    function getLocation() {
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition((position) => {
+          fetchWeather(position.coords.latitude, position.coords.longitude);
+        });
+      }
+    }
+
+    window.onload = getLocation;
+  </script>
+</body>
+</html>
